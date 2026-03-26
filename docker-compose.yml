@@ -1,0 +1,390 @@
+services:
+  # ============ ORCHESTRATOR ============
+  orchestrator:
+    build:
+      context: ./services/orchestrator
+      dockerfile: Dockerfile
+    container_name: ai-platform-orchestrator
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/aipm
+      - AI_AGENT_URL=http://ai-agent:8001
+      - DATA_AGENT_URL=http://data-agent:8002
+      - DEVOPS_AGENT_URL=http://devops-agent:8003
+      - NETMON_AGENT_URL=http://netmon-agent:8004
+      - SECURITY_AGENT_URL=http://security-agent:8005
+      - JWT_SECRET=${JWT_SECRET:-your-secret-key-here}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./logs:/app/logs
+      - ./shared:/app/shared
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ AI AGENT ============
+  ai-agent:
+    build:
+      context: ./services/agents/ai
+      dockerfile: Dockerfile
+    container_name: ai-platform-ai-agent
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - MODEL_PATH=/app/models
+      - OLLAMA_HOST=${OLLAMA_HOST:-http://ollama:11434}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    volumes:
+      - ./models:/app/models
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - ollama
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ DATA AGENT ============
+  data-agent:
+    build:
+      context: ./services/agents/data
+      dockerfile: Dockerfile
+    container_name: ai-platform-data-agent
+    ports:
+      - "8002:8002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/aipm
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+      - data-storage:/app/data
+    depends_on:
+      - redis
+      - postgres
+      - minio
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ DEVOPS AGENT ============
+  devops-agent:
+    build:
+      context: ./services/agents/devops
+      dockerfile: Dockerfile
+    container_name: ai-platform-devops-agent
+    ports:
+      - "8003:8003"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - KUBECONFIG=/app/config/kubeconfig
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - TERRAFORM_DIR=/app/terraform
+    volumes:
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+      - ./terraform:/app/terraform
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - redis
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ NETWORK MONITORING AGENT ============
+  netmon-agent:
+    build:
+      context: ./services/agents/netmon
+      dockerfile: Dockerfile
+    container_name: ai-platform-netmon-agent
+    ports:
+      - "8004:8004"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - PROMETHEUS_URL=http://prometheus:9090
+      - NET_INTERFACE=${NET_INTERFACE:-eth0}
+    volumes:
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - prometheus
+    networks:
+      - ai-platform-network
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ SECURITY AGENT ============
+  security-agent:
+    build:
+      context: ./services/agents/security
+      dockerfile: Dockerfile
+    container_name: ai-platform-security-agent
+    ports:
+      - "8005:8005"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - VAULT_ADDR=${VAULT_ADDR:-http://vault:8200}
+      - VAULT_TOKEN=${VAULT_TOKEN:-}
+      - SECURITY_SCAN_INTERVAL=${SECURITY_SCAN_INTERVAL:-3600}
+    volumes:
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - vault
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ PLAIN TEXT API ============
+  plaintext-api:
+    build:
+      context: ./services/plaintext
+      dockerfile: Dockerfile
+    container_name: ai-platform-plaintext-api
+    ports:
+      - "8006:8006"
+    environment:
+      - ORCHESTRATOR_URL=http://orchestrator:8000
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./shared:/app/shared
+      - ./logs:/app/logs
+    depends_on:
+      - orchestrator
+      - redis
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/text/help"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============ INFRASTRUCTURE SERVICES ============
+  redis:
+    image: redis:7-alpine
+    container_name: ai-platform-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - ai-platform-network
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-platform-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=aipm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    container_name: ai-platform-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    volumes:
+      - minio-data:/data
+    networks:
+      - ai-platform-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-platform-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ai-platform-network
+
+  vault:
+    image: hashicorp/vault:latest
+    container_name: ai-platform-vault
+    ports:
+      - "8200:8200"
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_TOKEN:-dev-token}
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    volumes:
+      - vault-data:/vault/data
+    networks:
+      - ai-platform-network
+    cap_add:
+      - IPC_LOCK
+    command: server -dev
+
+  # ============ MONITORING ============
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-platform-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - ai-platform-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ai-platform-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./config/grafana:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    networks:
+      - ai-platform-network
+    depends_on:
+      - prometheus
+
+  # ============ REVERSE PROXY ============
+  nginx:
+    image: nginx:alpine
+    container_name: ai-platform-nginx
+    ports:
+      - "8080:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./dashboard:/usr/share/nginx/dashboard:ro
+    networks:
+      - ai-platform-network
+    depends_on:
+      - orchestrator
+      - grafana
+
+  # ============ N8N WORKFLOW AUTOMATION ============
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: ai-platform-n8n
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=UTC
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=postgres
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./shared:/shared
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - ai-platform-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ============ VOLUMES ============
+volumes:
+  redis-data:
+  postgres-data:
+  minio-data:
+  ollama-data:
+  vault-data:
+  prometheus-data:
+  grafana-data:
+  data-storage:
+  n8n-data:
+
+# ============ NETWORKS ============
+networks:
+  ai-platform-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,205 @@
+{
+  "name": "📊 Smart Monitoring & Alerts",
+  "nodes": [
+    {
+      "id": "scheduler",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{
+            "field": "minutes",
+            "minutes": 5
+          }]
+        }
+      }
+    },
+    {
+      "id": "get_metrics",
+      "name": "Get System Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://prometheus:9090/api/v1/query",
+        "queryParameters": {
+          "query": "up"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "get_agents",
+      "name": "Get Agent Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 450],
+      "parameters": {
+        "method": "GET",
+        "url": "http://orchestrator:8000/agents",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "analyze_metrics",
+      "name": "Analyze Metrics",
+      "type": "n8n-nodes-base.function",
+      "position": [650, 375],
+      "parameters": {
+        "functionCode": "const promData = $input.all()[0].json.data?.result || [];\nconst agents = $input.all()[1].json || [];\n\nconst issues = [];\n\n// Check Prometheus metrics\npromData.forEach(metric => {\n  if (metric.value[1] === '0') {\n    issues.push({\n      type: 'service_down',\n      severity: 'critical',\n      service: metric.metric.instance,\n      message: `Service ${metric.metric.job} is down`\n    });\n  }\n});\n\n// Check agent health\nagents.forEach(agent => {\n  if (agent.status !== 'online') {\n    issues.push({\n      type: 'agent_offline',\n      severity: 'high',\n      service: agent.agent_type,\n      message: `Agent ${agent.agent_type} is ${agent.status}`\n    });\n  }\n});\n\nreturn issues.map(issue => ({ json: issue }));"
+      }
+    },
+    {
+      "id": "check_issues",
+      "name": "Issues Found?",
+      "type": "n8n-nodes-base.if",
+      "position": [850, 375],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.length > 0 }}",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            },
+            "rightValue": true
+          }
+        }
+      }
+    },
+    {
+      "id": "classify_severity",
+      "name": "Classify by Severity",
+      "type": "n8n-nodes-base.function",
+      "position": [1050, 300],
+      "parameters": {
+        "functionCode": "const issues = $input.all();\nconst critical = issues.filter(i => i.json.severity === 'critical');\nconst high = issues.filter(i => i.json.severity === 'high');\nconst medium = issues.filter(i => i.json.severity === 'medium');\n\nreturn [{\n  json: {\n    has_critical: critical.length > 0,\n    has_high: high.length > 0,\n    has_medium: medium.length > 0,\n    critical_count: critical.length,\n    high_count: high.length,\n    medium_count: medium.length,\n    all_issues: issues.map(i => i.json),\n    summary: `Critical: ${critical.length}, High: ${high.length}, Medium: ${medium.length}`\n  }\n}];"
+      }
+    },
+    {
+      "id": "ai_analysis",
+      "name": "AI Analyze Issues",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/ai",
+        "body": {
+          "action": "analyze",
+          "params": {
+            "text": "={{ JSON.stringify($json.all_issues) }}",
+            "analysis_type": "system_health"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "critical_alert",
+      "name": "Critical Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [1450, 200],
+      "parameters": {
+        "channel": "#critical-alerts",
+        "text": "🚨 CRITICAL SYSTEM ALERT\n\n{{ $json.summary }}\n\nAI Analysis: {{ $json.ai_summary }}\n\nTime: {{ Date.now() }}\n\n@channel Immediate attention required!"
+      }
+    },
+    {
+      "id": "high_alert",
+      "name": "High Priority Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [1450, 300],
+      "parameters": {
+        "channel": "#high-priority-alerts",
+        "text": "⚠️ HIGH PRIORITY ISSUES\n\n{{ $json.summary }}\n\nIssues: {{ JSON.stringify($json.all_issues, null, 2) }}"
+      }
+    },
+    {
+      "id": "trigger_autoheal",
+      "name": "Trigger Auto-Healing",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1650, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://n8n:5678/webhook/autoheal",
+        "body": {
+          "trigger": "monitoring_alert",
+          "issues": "={{ $json.all_issues }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "log_metrics",
+      "name": "Log to Data Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1650, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "monitoring_alerts",
+            "format": "json",
+            "config": {
+              "data": "={{ $json }}",
+              "dataset_name": "alerts_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "healthy_notify",
+      "name": "All Healthy",
+      "type": "n8n-nodes-base.noOp",
+      "position": [1050, 500],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [{"node": "Get System Metrics", "type": "main", "index": 0}],
+        [{"node": "Get Agent Status", "type": "main", "index": 0}]
+      ]
+    },
+    "Get System Metrics": {
+      "main": [[{"node": "Analyze Metrics", "type": "main", "index": 0}]]
+    },
+    "Get Agent Status": {
+      "main": [[{"node": "Analyze Metrics", "type": "main", "index": 0}]]
+    },
+    "Analyze Metrics": {
+      "main": [[{"node": "Issues Found?", "type": "main", "index": 0}]]
+    },
+    "Issues Found?": {
+      "main": [
+        [{"node": "Classify by Severity", "type": "main", "index": 0}],
+        [{"node": "All Healthy", "type": "main", "index": 0}]
+      ]
+    },
+    "Classify by Severity": {
+      "main": [[{"node": "AI Analyze Issues", "type": "main", "index": 0}]]
+    },
+    "AI Analyze Issues": {
+      "main": [
+        [{"node": "Critical Alert", "type": "main", "index": 0}],
+        [{"node": "High Priority Alert", "type": "main", "index": 0}]
+      ]
+    },
+    "Critical Alert": {
+      "main": [[{"node": "Trigger Auto-Healing", "type": "main", "index": 0}]]
+    },
+    "High Priority Alert": {
+      "main": [[{"node": "Log to Data Agent", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["monitoring", "alerts", "slack", "prometheus"]
+}

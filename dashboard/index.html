@@ -1,0 +1,1008 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 AI Platform Master Control</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            color: #e2e8f0;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            padding: 20px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(255,255,255,0.2);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+        
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+        
+        @media (max-width: 1200px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .panel {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid #334155;
+            border-radius: 16px;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .panel-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: #60a5fa;
+        }
+        
+        .agents-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 12px;
+        }
+        
+        .agent-card {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 2px solid #334155;
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .agent-card:hover {
+            transform: translateY(-4px);
+            border-color: #6366f1;
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.3);
+        }
+        
+        .agent-card.active {
+            border-color: #10b981;
+            background: linear-gradient(135deg, #065f46 0%, #1e293b 100%);
+        }
+        
+        .agent-card.offline {
+            border-color: #ef4444;
+            opacity: 0.7;
+        }
+        
+        .agent-icon {
+            font-size: 32px;
+            margin-bottom: 8px;
+        }
+        
+        .agent-name {
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        
+        .agent-status {
+            font-size: 11px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            background: #334155;
+        }
+        
+        .agent-status.online {
+            background: #10b981;
+            color: white;
+        }
+        
+        .agent-status.offline {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .chat-container {
+            display: flex;
+            flex-direction: column;
+            height: 500px;
+        }
+        
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            background: #0f172a;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            border: 1px solid #334155;
+        }
+        
+        .message {
+            margin-bottom: 16px;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 12px;
+            color: #94a3b8;
+        }
+        
+        .message-content {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+        }
+        
+        .message.user .message-content {
+            background: #6366f1;
+            margin-left: 40px;
+        }
+        
+        .message.agent .message-content {
+            background: #334155;
+            margin-right: 40px;
+            border-left: 4px solid #10b981;
+        }
+        
+        .message.system .message-content {
+            background: #451a03;
+            border: 1px solid #92400e;
+            text-align: center;
+            font-size: 12px;
+        }
+        
+        .chat-input-container {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .chat-input {
+            flex: 1;
+            padding: 14px 18px;
+            background: #0f172a;
+            border: 2px solid #334155;
+            border-radius: 12px;
+            color: #e2e8f0;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        .chat-input:focus {
+            border-color: #6366f1;
+        }
+        
+        .btn {
+            padding: 14px 24px;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 14px;
+        }
+        
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #334155;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        }
+        
+        .suggestions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 12px;
+        }
+        
+        .suggestion-chip {
+            padding: 8px 14px;
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 20px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .suggestion-chip:hover {
+            background: #6366f1;
+            border-color: #6366f1;
+        }
+        
+        .services-list {
+            display: grid;
+            gap: 10px;
+        }
+        
+        .service-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: #0f172a;
+            border-radius: 10px;
+            border: 1px solid #334155;
+        }
+        
+        .service-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .service-icon {
+            font-size: 20px;
+        }
+        
+        .service-name {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        .service-url {
+            font-size: 11px;
+            color: #64748b;
+        }
+        
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+        
+        .status-badge {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .status-badge.running {
+            background: #10b981;
+            box-shadow: 0 0 8px #10b981;
+        }
+        
+        .status-badge.stopped {
+            background: #ef4444;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        }
+        
+        .metric-card {
+            background: #0f172a;
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #60a5fa;
+        }
+        
+        .metric-label {
+            font-size: 12px;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+        
+        .actions-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        
+        .action-btn {
+            padding: 16px;
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            color: #e2e8f0;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .action-btn:hover {
+            border-color: #6366f1;
+            transform: translateY(-2px);
+        }
+        
+        .action-btn span {
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .typing-indicator {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+            background: #334155;
+            border-radius: 12px;
+            width: fit-content;
+            margin-bottom: 16px;
+        }
+        
+        .typing-indicator span {
+            width: 8px;
+            height: 8px;
+            background: #94a3b8;
+            border-radius: 50%;
+            animation: typing 1.4s infinite;
+        }
+        
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typing {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-10px); }
+        }
+        
+        .logs-container {
+            background: #0f172a;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            height: 200px;
+            overflow-y: auto;
+            border: 1px solid #334155;
+        }
+        
+        .log-entry {
+            margin-bottom: 6px;
+            padding: 4px 0;
+            border-bottom: 1px solid #1e293b;
+        }
+        
+        .log-time {
+            color: #64748b;
+        }
+        
+        .log-level {
+            font-weight: bold;
+            margin: 0 8px;
+        }
+        
+        .log-level.info { color: #60a5fa; }
+        .log-level.success { color: #10b981; }
+        .log-level.warning { color: #f59e0b; }
+        .log-level.error { color: #ef4444; }
+        
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            border-bottom: 2px solid #334155;
+            padding-bottom: 12px;
+        }
+        
+        .tab {
+            padding: 8px 16px;
+            background: transparent;
+            border: none;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        
+        .tab:hover {
+            color: #e2e8f0;
+            background: #334155;
+        }
+        
+        .tab.active {
+            color: #6366f1;
+            background: rgba(99, 102, 241, 0.1);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 AI Platform Master Control</h1>
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span>System Operational</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Top Row: Agents & Chat -->
+        <div class="grid">
+            <!-- Agent Status Panel -->
+            <div class="panel">
+                <div class="panel-title">🎭 Active Agents</div>
+                <div class="agents-grid" id="agentsGrid">
+                    <!-- Agents loaded dynamically -->
+                </div>
+                
+                <div class="suggestions">
+                    <div class="suggestion-chip" onclick="quickCommand('ping google.com')">🌐 Ping test</div>
+                    <div class="suggestion-chip" onclick="quickCommand('discover network')">🔍 Discover</div>
+                    <div class="suggestion-chip" onclick="quickCommand('validate data')">📊 Validate</div>
+                    <div class="suggestion-chip" onclick="quickCommand('check health')">🏥 Health</div>
+                    <div class="suggestion-chip" onclick="quickCommand('scan security')">🔒 Security</div>
+                </div>
+            </div>
+
+            <!-- Chat Interface -->
+            <div class="panel">
+                <div class="panel-title">💬 AI Command Center (Simple Text)</div>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="message system">
+                            <div class="message-content">
+                                🤖 Welcome! Type commands in plain English. No JSON needed!<br><br>
+                                <strong>Examples:</strong><br>
+                                • "ping 192.168.1.1"<br>
+                                • "discover all network devices"<br>
+                                • "backup customer database"<br>
+                                • "deploy api-service"<br>
+                                • "scan for vulnerabilities"<br>
+                                • "check health of all services"
+                            </div>
+                        </div>
+                    </div>
+                    <div class="chat-input-container">
+                        <input type="text" class="chat-input" id="chatInput" placeholder="Type your command in plain English..." onkeypress="handleEnter(event)">
+                        <button class="btn" onclick="sendCommand()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Middle Row: Services & Metrics -->
+        <div class="grid">
+            <!-- Services Status -->
+            <div class="panel">
+                <div class="panel-title">🔧 Services Status</div>
+                <div class="services-list" id="servicesList">
+                    <!-- Services loaded dynamically -->
+                </div>
+            </div>
+
+            <!-- System Metrics -->
+            <div class="panel">
+                <div class="panel-title">📊 System Overview</div>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="agentsOnline">5</div>
+                        <div class="metric-label">Agents Online</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="tasksToday">0</div>
+                        <div class="metric-label">Tasks Today</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="alertsCount">0</div>
+                        <div class="metric-label">Active Alerts</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="uptime">99%</div>
+                        <div class="metric-label">Uptime</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 20px;">
+                    <div style="font-size: 14px; font-weight: 600; margin-bottom: 12px; color: #60a5fa;">⚡ Quick Actions</div>
+                    <div class="actions-grid">
+                        <div class="action-btn" onclick="quickCommand('discover all systems')">
+                            <span>🔍 Auto-Discover</span>
+                        </div>
+                        <div class="action-btn" onclick="quickCommand('check all health')">
+                            <span>🏥 Health Check All</span>
+                        </div>
+                        <div class="action-btn" onclick="quickCommand('backup all data')">
+                            <span>💾 Backup Everything</span>
+                        </div>
+                        <div class="action-btn" onclick="quickCommand('scan all security')">
+                            <span>🔒 Full Security Scan</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Row: Logs & Details -->
+        <div class="panel">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('logs')">📝 System Logs</button>
+                <button class="tab" onclick="switchTab('inbox')">📥 Agent Inbox</button>
+                <button class="tab" onclick="switchTab('context')">🗂️ Shared Context</button>
+                <button class="tab" onclick="switchTab('sessions')">💬 Sessions</button>
+            </div>
+            
+            <div id="logs" class="tab-content active">
+                <div class="logs-container" id="logsContainer">
+                    <div class="log-entry">
+                        <span class="log-time">[Now]</span>
+                        <span class="log-level info">INFO</span>
+                        <span>AI Platform Master Control initialized - Plain Text Mode Active</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="inbox" class="tab-content">
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <select id="inboxAgent" class="chat-input" style="flex: 1;">
+                        <option value="ai">🤖 AI Agent</option>
+                        <option value="data">📊 Data Agent</option>
+                        <option value="devops">⚙️ DevOps Agent</option>
+                        <option value="netmon">🌐 NetMon Agent</option>
+                        <option value="security">🔒 Security Agent</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="loadInbox()">Refresh</button>
+                </div>
+                <div id="inboxContent" class="chat-messages" style="height: 200px;">
+                    <div class="message system">
+                        <div class="message-content">Select an agent to view inbox messages</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="context" class="tab-content">
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <input type="text" id="contextKey" class="chat-input" style="flex: 1;" placeholder="Context key (e.g., 'network_devices')">
+                    <button class="btn" onclick="getContext()">Get</button>
+                    <button class="btn btn-success" onclick="setContext()">Set</button>
+                </div>
+                <div id="contextContent" class="chat-messages" style="height: 200px;">
+                    <div class="message system">
+                        <div class="message-content">Shared context allows agents to exchange data. Example: NetMon discovers devices, stores in context, Security scans them.</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="sessions" class="tab-content">
+                <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+                    <input type="text" id="sessionId" class="chat-input" style="flex: 1;" placeholder="Session ID">
+                    <button class="btn" onclick="createSession()">Create New</button>
+                    <button class="btn btn-secondary" onclick="loadSession()">Load</button>
+                </div>
+                <div id="sessionContent" class="chat-messages" style="height: 200px;">
+                    <div class="message system">
+                        <div class="message-content">Multi-agent sessions enable coordinated workflows. Create a session to have multiple agents work together on a task.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const API_BASE = 'http://localhost:8000';
+        const PLAIN_TEXT_API = 'http://localhost:8006';
+        
+        // Agent ports
+        const AGENT_PORTS = {
+            'ai': 8001,
+            'data': 8002,
+            'devops': 8003,
+            'netmon': 8004,
+            'security': 8005
+        };
+        
+        // Agent info
+        const AGENTS = {
+            'ai': { name: 'AI Agent', icon: '🤖', color: '#6366f1' },
+            'data': { name: 'Data Agent', icon: '📊', color: '#10b981' },
+            'devops': { name: 'DevOps Agent', icon: '⚙️', color: '#f59e0b' },
+            'netmon': { name: 'NetMon Agent', icon: '🌐', color: '#8b5cf6' },
+            'security': { name: 'Security Agent', icon: '🔒', color: '#ef4444' }
+        };
+        
+        // Services
+        const SERVICES = [
+            { name: 'Orchestrator', icon: '🎯', url: 'localhost:8000' },
+            { name: 'AI Agent', icon: '🤖', url: 'localhost:8001' },
+            { name: 'Data Agent', icon: '📊', url: 'localhost:8002' },
+            { name: 'DevOps Agent', icon: '⚙️', url: 'localhost:8003' },
+            { name: 'NetMon Agent', icon: '🌐', url: 'localhost:8004' },
+            { name: 'Security Agent', icon: '🔒', url: 'localhost:8005' },
+            { name: 'Plain Text API', icon: '📝', url: 'localhost:8006' },
+            { name: 'PostgreSQL', icon: '🐘', url: 'localhost:5432' },
+            { name: 'Redis', icon: '🔴', url: 'localhost:6379' },
+            { name: 'MinIO', icon: '🪣', url: 'localhost:9000' },
+            { name: 'n8n', icon: '⚡', url: 'localhost:5678' },
+            { name: 'Grafana', icon: '📈', url: 'localhost:3000' }
+        ];
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadAgents();
+            loadServices();
+            setInterval(loadAgents, 5000);
+            setInterval(loadServices, 10000);
+            addLog('System initialized - Plain Text Interface Active', 'info');
+        });
+        
+        // Load agents
+        async function loadAgents() {
+            try {
+                const response = await fetch(`${API_BASE}/agents`);
+                const agents = await response.json();
+                
+                const grid = document.getElementById('agentsGrid');
+                grid.innerHTML = agents.map(agent => {
+                    const info = AGENTS[agent.agent_type] || { name: agent.agent_type, icon: '🤖' };
+                    const isOnline = agent.status === 'online';
+                    
+                    return `
+                        <div class="agent-card ${isOnline ? 'active' : 'offline'}" onclick="selectAgent('${agent.agent_type}')">
+                            <div class="agent-icon">${info.icon}</div>
+                            <div class="agent-name">${info.name}</div>
+                            <div class="agent-status ${isOnline ? 'online' : 'offline'}">
+                                ${isOnline ? '🟢 Online' : '🔴 Offline'}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Update metrics
+                const onlineCount = agents.filter(a => a.status === 'online').length;
+                document.getElementById('agentsOnline').textContent = `${onlineCount}/${agents.length}`;
+            } catch (error) {
+                console.error('Failed to load agents:', error);
+            }
+        }
+        
+        // Load services
+        async function loadServices() {
+            const list = document.getElementById('servicesList');
+            
+            const servicesHtml = SERVICES.map(service => {
+                return `
+                    <div class="service-item">
+                        <div class="service-info">
+                            <span class="service-icon">${service.icon}</span>
+                            <div>
+                                <div class="service-name">${service.name}</div>
+                                <div class="service-url">${service.url}</div>
+                            </div>
+                        </div>
+                        <div class="service-status">
+                            <span class="status-badge running"></span>
+                            <span>Active</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            list.innerHTML = servicesHtml;
+        }
+        
+        // Chat functionality
+        function handleEnter(event) {
+            if (event.key === 'Enter') {
+                sendCommand();
+            }
+        }
+        
+        function quickCommand(text) {
+            document.getElementById('chatInput').value = text;
+            sendCommand();
+        }
+        
+        async function sendCommand() {
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            
+            if (!text) return;
+            
+            // Add user message
+            addMessage('user', 'You', text);
+            input.value = '';
+            
+            // Show typing indicator
+            showTyping();
+            
+            try {
+                // Use plain text API
+                const response = await fetch(`${PLAIN_TEXT_API}/text/command`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: text })
+                });
+                
+                const result = await response.json();
+                
+                // Remove typing indicator
+                removeTyping();
+                
+                // Add agent response (now in simple text format)
+                addMessage('agent', AGENTS[result.agent]?.name || result.agent, result.result);
+                
+                // Log
+                addLog(`Command: "${text}" → ${result.agent} agent`, 'success');
+                
+                // Update task count
+                const tasksEl = document.getElementById('tasksToday');
+                tasksEl.textContent = parseInt(tasksEl.textContent) + 1;
+                
+            } catch (error) {
+                removeTyping();
+                addMessage('agent', 'System', `❌ Error: ${error.message}. Make sure Plain Text API is running on port 8006.`);
+                addLog(`Command failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function addMessage(type, sender, content) {
+            const container = document.getElementById('chatMessages');
+            const msg = document.createElement('div');
+            msg.className = `message ${type}`;
+            msg.innerHTML = `
+                <div class="message-header">
+                    <strong>${sender}</strong>
+                    <span>${new Date().toLocaleTimeString()}</span>
+                </div>
+                <div class="message-content">${content}</div>
+            `;
+            container.appendChild(msg);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function showTyping() {
+            const container = document.getElementById('chatMessages');
+            const typing = document.createElement('div');
+            typing.id = 'typing-indicator';
+            typing.className = 'typing-indicator';
+            typing.innerHTML = '<span></span><span></span><span></span>';
+            container.appendChild(typing);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        function removeTyping() {
+            const typing = document.getElementById('typing-indicator');
+            if (typing) typing.remove();
+        }
+        
+        // Logs
+        function addLog(message, level = 'info') {
+            const container = document.getElementById('logsContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            entry.innerHTML = `
+                <span class="log-time">[${new Date().toLocaleTimeString()}]</span>
+                <span class="log-level ${level}">${level.toUpperCase()}</span>
+                <span>${message}</span>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+        
+        // Tab switching
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+        }
+        
+        // Inbox
+        async function loadInbox() {
+            const agent = document.getElementById('inboxAgent').value;
+            const port = AGENT_PORTS[agent];
+            
+            try {
+                const response = await fetch(`http://localhost:${port}/message/inbox`);
+                const result = await response.json();
+                
+                const container = document.getElementById('inboxContent');
+                
+                if (result.messages && result.messages.length > 0) {
+                    container.innerHTML = result.messages.map(msg => `
+                        <div class="message agent">
+                            <div class="message-header">
+                                <strong>From: ${msg.sender}</strong>
+                                <span>${new Date(msg.timestamp).toLocaleTimeString()}</span>
+                            </div>
+                            <div class="message-content">${JSON.stringify(msg.content, null, 2)}</div>
+                        </div>
+                    `).reverse().join('');
+                } else {
+                    container.innerHTML = `<div class="message system"><div class="message-content">📭 Inbox is empty</div></div>`;
+                }
+            } catch (error) {
+                document.getElementById('inboxContent').innerHTML = `
+                    <div class="message system"><div class="message-content">❌ Error: ${error.message}</div></div>
+                `;
+            }
+        }
+        
+        // Context
+        async function getContext() {
+            const key = document.getElementById('contextKey').value;
+            if (!key) { alert('Please enter a context key'); return; }
+            
+            try {
+                const response = await fetch(`${API_BASE}/communicate/shared-context/${key}`);
+                const result = await response.json();
+                
+                document.getElementById('contextContent').innerHTML = `
+                    <div class="message agent">
+                        <div class="message-header"><strong>Context: ${key}</strong></div>
+                        <div class="message-content"><pre style="margin: 0;">${JSON.stringify(result, null, 2)}</pre></div>
+                    </div>
+                `;
+            } catch (error) {
+                document.getElementById('contextContent').innerHTML = `
+                    <div class="message system"><div class="message-content">❌ Error: ${error.message}</div></div>
+                `;
+            }
+        }
+        
+        async function setContext() {
+            const key = document.getElementById('contextKey').value;
+            if (!key) { alert('Please enter a context key'); return; }
+            
+            const value = prompt('Enter JSON value:', '{"data": "value"}');
+            if (!value) return;
+            
+            try {
+                const parsed = JSON.parse(value);
+                await fetch(`${API_BASE}/communicate/shared-context/${key}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: parsed, ttl: 600 })
+                });
+                addLog(`Context set: ${key}`, 'success');
+                alert('Context stored!');
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        // Sessions
+        async function createSession() {
+            try {
+                const response = await fetch(`${API_BASE}/communicate/session/create`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ participants: Object.keys(AGENTS) })
+                });
+                
+                const result = await response.json();
+                if (result.session) {
+                    document.getElementById('sessionId').value = result.session.session_id;
+                    document.getElementById('sessionContent').innerHTML = `
+                        <div class="message agent">
+                            <div class="message-header"><strong>Session Created</strong></div>
+                            <div class="message-content">ID: ${result.session.session_id}<br>Participants: ${result.session.participants.join(', ')}</div>
+                        </div>
+                    `;
+                    addLog('Multi-agent session created', 'success');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+        
+        async function loadSession() {
+            const sessionId = document.getElementById('sessionId').value;
+            if (!sessionId) { alert('Please enter a session ID'); return; }
+            
+            try {
+                const response = await fetch(`${API_BASE}/communicate/session/${sessionId}/history`);
+                const result = await response.json();
+                
+                const container = document.getElementById('sessionContent');
+                if (result.messages && result.messages.length > 0) {
+                    container.innerHTML = result.messages.map(msg => `
+                        <div class="message agent">
+                            <div class="message-header"><strong>${msg.sender}</strong></div>
+                            <div class="message-content">${JSON.stringify(msg.content, null, 2)}</div>
+                        </div>
+                    `).reverse().join('');
+                } else {
+                    container.innerHTML = `<div class="message system"><div class="message-content">No messages</div></div>`;
+                }
+            } catch (error) {
+                document.getElementById('sessionContent').innerHTML = `
+                    <div class="message system"><div class="message-content">❌ Error: ${error.message}</div></div>
+                `;
+            }
+        }
+        
+        function selectAgent(agentType) {
+            document.getElementById('chatInput').value = `Ask ${AGENTS[agentType]?.name} to `;
+            document.getElementById('chatInput').focus();
+        }
+    </script>
+</body>
+</html>

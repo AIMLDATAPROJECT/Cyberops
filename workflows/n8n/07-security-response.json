@@ -1,0 +1,204 @@
+{
+  "name": "🔒 Security Incident Response",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Security Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "security-alerts",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "security-alerts",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "classify",
+      "name": "Classify Incident",
+      "type": "n8n-nodes-base.function",
+      "position": [450, 300],
+      "parameters": {
+        "functionCode": "const alert = $input.first().json;\nconst severity = alert.severity || 'low';\nconst type = alert.type || 'unknown';\n\nreturn [{\n  json: {\n    severity: severity,\n    type: type,\n    target: alert.target || 'system',\n    details: alert.details || {},\n    auto_remediate: ['critical', 'high'].includes(severity),\n    escalate: severity === 'critical'\n  }\n}];"
+      }
+    },
+    {
+      "id": "check_severity",
+      "name": "Critical?",
+      "type": "n8n-nodes-base.switch",
+      "position": [650, 300],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "critical",
+              "output": 0
+            },
+            {
+              "value": "high",
+              "output": 1
+            },
+            {
+              "value": "medium",
+              "output": 2
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.severity }}"
+      }
+    },
+    {
+      "id": "immediate_isolation",
+      "name": "Isolate System",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "restart",
+          "params": {
+            "service": "={{ $json.target }}",
+            "isolation_mode": true
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "rotate_secrets",
+      "name": "Emergency Rotate Secrets",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/security",
+        "body": {
+          "action": "rotate_secret",
+          "params": {
+            "secret_name": "compromised",
+            "emergency": true
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "auto_remediate_high",
+      "name": "Auto-Remediate High",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/security",
+        "body": {
+          "action": "config_scan",
+          "params": {
+            "target": "={{ $json.target }}",
+            "auto_fix": true
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai_analysis",
+      "name": "AI Threat Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/ai",
+        "body": {
+          "action": "analyze",
+          "params": {
+            "text": "Security incident: {{ $json.type }} on {{ $json.target }}",
+            "analysis_type": "security_threat"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "notify_security_team",
+      "name": "Alert Security Team",
+      "type": "n8n-nodes-base.slack",
+      "position": [1250, 300],
+      "parameters": {
+        "channel": "#security-incidents",
+        "text": "🚨 SECURITY INCIDENT\n\nSeverity: {{ $json.severity }}\nType: {{ $json.type }}\nTarget: {{ $json.target }}\n\nAuto-remediation: {{ $json.auto_remediate ? 'Executed' : 'Skipped' }}\nAI Analysis: {{ $json.ai_summary }}\n\nTime: {{ Date.now() }}"
+      }
+    },
+    {
+      "id": "log_incident",
+      "name": "Log to Data Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1450, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "security_incident",
+            "format": "json",
+            "config": {
+              "data": "={{ $json }}",
+              "dataset_name": "security_incidents_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "position": [1650, 300],
+      "parameters": {
+        "statusCode": 200,
+        "responseBody": "={{ JSON.stringify({ status: 'incident_handled', severity: $json.severity }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Security Alert Webhook": {
+      "main": [[{"node": "Classify Incident", "type": "main", "index": 0}]]
+    },
+    "Classify Incident": {
+      "main": [[{"node": "Critical?", "type": "main", "index": 0}]]
+    },
+    "Critical?": {
+      "main": [
+        [{"node": "Isolate System", "type": "main", "index": 0}],
+        [{"node": "Auto-Remediate High", "type": "main", "index": 0}],
+        [{"node": "AI Threat Analysis", "type": "main", "index": 0}]
+      ]
+    },
+    "Isolate System": {
+      "main": [[{"node": "Emergency Rotate Secrets", "type": "main", "index": 0}]]
+    },
+    "Emergency Rotate Secrets": {
+      "main": [[{"node": "AI Threat Analysis", "type": "main", "index": 0}]]
+    },
+    "Auto-Remediate High": {
+      "main": [[{"node": "AI Threat Analysis", "type": "main", "index": 0}]]
+    },
+    "AI Threat Analysis": {
+      "main": [[{"node": "Alert Security Team", "type": "main", "index": 0}]]
+    },
+    "Alert Security Team": {
+      "main": [[{"node": "Log to Data Agent", "type": "main", "index": 0}]]
+    },
+    "Log to Data Agent": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["security", "incident-response", "auto-remediation"]
+}

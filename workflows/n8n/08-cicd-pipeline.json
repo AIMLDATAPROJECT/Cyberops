@@ -1,0 +1,311 @@
+{
+  "name": "🚀 CI/CD Pipeline Automation",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Git Push Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "git-push",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "git-push",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "extract_info",
+      "name": "Extract Git Info",
+      "type": "n8n-nodes-base.function",
+      "position": [450, 300],
+      "parameters": {
+        "functionCode": "const payload = $input.first().json;\nconst branch = payload.ref?.replace('refs/heads/', '') || 'main';\nconst repo = payload.repository?.name || 'unknown';\nconst commit = payload.after?.substring(0, 7) || 'unknown';\nconst pusher = payload.pusher?.name || 'unknown';\n\nreturn [{\n  json: {\n    branch: branch,\n    repo: repo,\n    commit: commit,\n    pusher: pusher,\n    should_deploy: branch === 'main' || branch === 'production',\n    service_name: repo.replace('-service', '')\n  }\n}];"
+      }
+    },
+    {
+      "id": "check_branch",
+      "name": "Deploy Branch?",
+      "type": "n8n-nodes-base.if",
+      "position": [650, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.should_deploy }}",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            },
+            "rightValue": true
+          }
+        }
+      }
+    },
+    {
+      "id": "notify_skip",
+      "name": "Skip Deploy Notify",
+      "type": "n8n-nodes-base.slack",
+      "position": [850, 400],
+      "parameters": {
+        "channel": "#deployments",
+        "text": "⏭️ Skipped deployment for {{ $json.branch }} branch ({{ $json.repo }})"
+      }
+    },
+    {
+      "id": "start_deploy",
+      "name": "Start Deployment",
+      "type": "n8n-nodes-base.slack",
+      "position": [850, 200],
+      "parameters": {
+        "channel": "#deployments",
+        "text": "🚀 Starting deployment...\nRepo: {{ $json.repo }}\nBranch: {{ $json.branch }}\nCommit: {{ $json.commit }}\nBy: {{ $json.pusher }}"
+      }
+    },
+    {
+      "id": "build_image",
+      "name": "Build Docker Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "build",
+          "params": {
+            "service": "={{ $json.service_name }}",
+            "tag": "={{ $json.commit }}"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "security_scan",
+      "name": "Security Scan Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/security",
+        "body": {
+          "action": "config_scan",
+          "params": {
+            "image": "={{ $json.service_name }}:{{ $json.commit }}",
+            "standards": ["docker_security", "cve_check"]
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "check_vulns",
+      "name": "Vulnerabilities Found?",
+      "type": "n8n-nodes-base.if",
+      "position": [1450, 200],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.result?.violations?.length > 0 || $json.result?.risk_score > 5 }}",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            },
+            "rightValue": true
+          }
+        }
+      }
+    },
+    {
+      "id": "block_deploy",
+      "name": "Block Deployment",
+      "type": "n8n-nodes-base.slack",
+      "position": [1650, 150],
+      "parameters": {
+        "channel": "#security-alerts",
+        "text": "🚫 DEPLOYMENT BLOCKED\n\nSecurity scan found issues!\nRisk Score: {{ $json.result?.risk_score }}\nViolations: {{ $json.result?.violations?.length }}\n\nImage: {{ $json.service_name }}:{{ $json.commit }}"
+      }
+    },
+    {
+      "id": "deploy_staging",
+      "name": "Deploy to Staging",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1650, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "deploy",
+          "params": {
+            "service": "={{ $json.service_name }}",
+            "version": "={{ $json.commit }}",
+            "environment": "staging"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "health_check",
+      "name": "Health Check Staging",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1850, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "health_check",
+          "params": {
+            "service": "={{ $json.service_name }}",
+            "environment": "staging"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "check_healthy",
+      "name": "Healthy?",
+      "type": "n8n-nodes-base.if",
+      "position": [2050, 250],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.result?.healthy === true }}",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            },
+            "rightValue": true
+          }
+        }
+      }
+    },
+    {
+      "id": "deploy_prod",
+      "name": "Deploy to Production",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2250, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "deploy",
+          "params": {
+            "service": "={{ $json.service_name }}",
+            "version": "={{ $json.commit }}",
+            "environment": "production"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "rollback",
+      "name": "Auto Rollback",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "rollback",
+          "params": {
+            "service": "={{ $json.service_name }}",
+            "reason": "Health check failed in staging"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "success_notify",
+      "name": "Success Notification",
+      "type": "n8n-nodes-base.slack",
+      "position": [2450, 200],
+      "parameters": {
+        "channel": "#deployments",
+        "text": "✅ DEPLOYMENT SUCCESSFUL\n\nService: {{ $json.service_name }}\nVersion: {{ $json.commit }}\nEnvironment: Production\n\nAll health checks passed!"
+      }
+    },
+    {
+      "id": "failure_notify",
+      "name": "Failure Alert",
+      "type": "n8n-nodes-base.slack",
+      "position": [2450, 300],
+      "parameters": {
+        "channel": "#deployments",
+        "text": "❌ DEPLOYMENT FAILED\n\nService: {{ $json.service_name }}\nCommit: {{ $json.commit }}\nAction: Auto-rollback triggered\n\nCheck staging health logs!"
+      }
+    },
+    {
+      "id": "response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "position": [2650, 250],
+      "parameters": {
+        "statusCode": 200,
+        "responseBody": "={{ JSON.stringify({ status: 'pipeline_complete', deployed: $json.service_name }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Git Push Webhook": {
+      "main": [[{"node": "Extract Git Info", "type": "main", "index": 0}]]
+    },
+    "Extract Git Info": {
+      "main": [[{"node": "Deploy Branch?", "type": "main", "index": 0}]]
+    },
+    "Deploy Branch?": {
+      "main": [
+        [{"node": "Start Deployment", "type": "main", "index": 0}],
+        [{"node": "Skip Deploy Notify", "type": "main", "index": 0}]
+      ]
+    },
+    "Start Deployment": {
+      "main": [[{"node": "Build Docker Image", "type": "main", "index": 0}]]
+    },
+    "Build Docker Image": {
+      "main": [[{"node": "Security Scan Image", "type": "main", "index": 0}]]
+    },
+    "Security Scan Image": {
+      "main": [[{"node": "Vulnerabilities Found?", "type": "main", "index": 0}]]
+    },
+    "Vulnerabilities Found?": {
+      "main": [
+        [{"node": "Block Deployment", "type": "main", "index": 0}],
+        [{"node": "Deploy to Staging", "type": "main", "index": 0}]
+      ]
+    },
+    "Deploy to Staging": {
+      "main": [[{"node": "Health Check Staging", "type": "main", "index": 0}]]
+    },
+    "Health Check Staging": {
+      "main": [[{"node": "Healthy?", "type": "main", "index": 0}]]
+    },
+    "Healthy?": {
+      "main": [
+        [{"node": "Deploy to Production", "type": "main", "index": 0}],
+        [{"node": "Auto Rollback", "type": "main", "index": 0}]
+      ]
+    },
+    "Deploy to Production": {
+      "main": [[{"node": "Success Notification", "type": "main", "index": 0}]]
+    },
+    "Auto Rollback": {
+      "main": [[{"node": "Failure Alert", "type": "main", "index": 0}]]
+    },
+    "Success Notification": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "Failure Alert": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "Block Deployment": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["cicd", "deployment", "automation"]
+}

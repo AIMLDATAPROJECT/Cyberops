@@ -1,0 +1,321 @@
+{
+  "name": "⚙️ CI/CD Pipeline Automation",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "DevOps Task Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "devops-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "devops-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "switch",
+      "name": "Pipeline Stage",
+      "type": "n8n-nodes-base.switch",
+      "position": [450, 300],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "build",
+              "output": 0
+            },
+            {
+              "value": "deploy",
+              "output": 1
+            },
+            {
+              "value": "health_check",
+              "output": 2
+            },
+            {
+              "value": "restart",
+              "output": 3
+            },
+            {
+              "value": "scale",
+              "output": 4
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.action }}"
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "build",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "security_gate",
+      "name": "Security Scan Gate",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 100],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/communicate/delegate",
+        "body": {
+          "from": "devops",
+          "to": "security",
+          "task": {
+            "action": "config_scan",
+            "params": {
+              "config_path": "={{ $json.result.image_tag }}",
+              "standards": ["docker_security"]
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "deploy",
+      "name": "Deploy Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "deploy",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "verify_deploy",
+      "name": "Verify Deployment",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "health_check",
+          "params": {
+            "service": "={{ $json.params.service }}"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "rollback_check",
+      "name": "Check Rollback Needed",
+      "type": "n8n-nodes-base.if",
+      "position": [1050, 200],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ $json.result?.healthy === false }}",
+            "type": "boolean",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals",
+              "rightValue": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "rollback",
+      "name": "Auto Rollback",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "rollback",
+          "params": {
+            "service": "={{ $json.params.service }}",
+            "reason": "Health check failed after deployment"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "alert_team",
+      "name": "Alert Team",
+      "type": "n8n-nodes-base.slack",
+      "position": [1450, 150],
+      "parameters": {
+        "channel": "#deployments",
+        "text": "🚨 Auto-rollback triggered for {{ $json.params.service }}\nReason: Health check failed\nTime: {{ Date.now() }}"
+      }
+    },
+    {
+      "id": "health_check",
+      "name": "System Health Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "health_check",
+          "params": "={{ JSON.stringify($json.params || {service: 'all'}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "analyze_health",
+      "name": "AI Health Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/ai",
+        "body": {
+          "action": "analyze",
+          "params": {
+            "text": "={{ JSON.stringify($json.result) }}",
+            "analysis_type": "system_health"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "restart",
+      "name": "Restart Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "restart",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "scale",
+      "name": "Scale Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 500],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "scale",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "store_metrics",
+      "name": "Store Pipeline Metrics",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 400],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "cicd_pipeline",
+            "format": "json",
+            "config": {
+              "data": "={{ $json }}",
+              "dataset_name": "cicd_{{ $json.params.service || 'all' }}_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "position": [1450, 400],
+      "parameters": {
+        "statusCode": 200,
+        "responseBody": "={{ JSON.stringify({ status: 'pipeline_completed', result: $json }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "DevOps Task Webhook": {
+      "main": [[{"node": "Pipeline Stage", "type": "main", "index": 0}]]
+    },
+    "Pipeline Stage": {
+      "main": [
+        [{"node": "Build Image", "type": "main", "index": 0}],
+        [{"node": "Deploy Service", "type": "main", "index": 0}],
+        [{"node": "System Health Check", "type": "main", "index": 0}],
+        [{"node": "Restart Service", "type": "main", "index": 0}],
+        [{"node": "Scale Service", "type": "main", "index": 0}]
+      ]
+    },
+    "Build Image": {
+      "main": [[{"node": "Security Scan Gate", "type": "main", "index": 0}]]
+    },
+    "Security Scan Gate": {
+      "main": [[{"node": "Store Pipeline Metrics", "type": "main", "index": 0}]]
+    },
+    "Deploy Service": {
+      "main": [[{"node": "Verify Deployment", "type": "main", "index": 0}]]
+    },
+    "Verify Deployment": {
+      "main": [[{"node": "Check Rollback Needed", "type": "main", "index": 0}]]
+    },
+    "Check Rollback Needed": {
+      "main": [
+        [{"node": "Auto Rollback", "type": "main", "index": 0}],
+        [{"node": "Store Pipeline Metrics", "type": "main", "index": 0}]
+      ]
+    },
+    "Auto Rollback": {
+      "main": [[{"node": "Alert Team", "type": "main", "index": 0}]]
+    },
+    "Alert Team": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    },
+    "System Health Check": {
+      "main": [[{"node": "AI Health Analysis", "type": "main", "index": 0}]]
+    },
+    "AI Health Analysis": {
+      "main": [[{"node": "Store Pipeline Metrics", "type": "main", "index": 0}]]
+    },
+    "Restart Service": {
+      "main": [[{"node": "Store Pipeline Metrics", "type": "main", "index": 0}]]
+    },
+    "Scale Service": {
+      "main": [[{"node": "Store Pipeline Metrics", "type": "main", "index": 0}]]
+    },
+    "Store Pipeline Metrics": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["cicd", "devops", "automation"]
+}

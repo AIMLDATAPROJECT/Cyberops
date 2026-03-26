@@ -1,0 +1,246 @@
+{
+  "name": "🌐 Network Auto-Discovery & Monitor",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "NetMon Task Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "netmon-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "netmon-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "switch",
+      "name": "Task Router",
+      "type": "n8n-nodes-base.switch",
+      "position": [450, 300],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "discover",
+              "output": 0
+            },
+            {
+              "value": "ping",
+              "output": 1
+            },
+            {
+              "value": "scan",
+              "output": 2
+            },
+            {
+              "value": "monitor",
+              "output": 3
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.action }}"
+      }
+    },
+    {
+      "id": "discover",
+      "name": "Network Discovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/netmon",
+        "body": {
+          "action": "discover",
+          "params": "={{ JSON.stringify($json.params || { subnet: '192.168.1.0/24' }) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ping",
+      "name": "Ping Check",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/netmon",
+        "body": {
+          "action": "ping",
+          "params": "={{ JSON.stringify($json.params || { target: 'google.com' }) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "scan",
+      "name": "Port/Vuln Scan",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/netmon",
+        "body": {
+          "action": "scan",
+          "params": "={{ JSON.stringify($json.params || { target_type: 'config' }) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "monitor",
+      "name": "Continuous Monitor",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 450],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/netmon",
+        "body": {
+          "action": "monitor",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "store_results",
+      "name": "Store in Data Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [850, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "netmon",
+            "format": "json",
+            "config": {
+              "data": "={{ $json }}",
+              "dataset_name": "network_scan_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "analyze",
+      "name": "AI Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/ai",
+        "body": {
+          "action": "analyze",
+          "params": {
+            "text": "={{ JSON.stringify($json) }}",
+            "analysis_type": "network_health"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "check_alerts",
+      "name": "Check for Alerts",
+      "type": "n8n-nodes-base.if",
+      "position": [1250, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ $json.result?.devices_offline > 0 || $json.result?.alerts?.length > 0 }}",
+            "type": "boolean",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals",
+              "rightValue": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "alert_security",
+      "name": "Alert Security Agent",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1450, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/communicate/message",
+        "body": {
+          "sender": "netmon",
+          "recipient": "security",
+          "message_type": "request",
+          "content": {
+            "action": "scan",
+            "params": {
+              "target": "={{ $json.result.offline_devices }}",
+              "scan_type": "deep_inspection",
+              "reason": "Network anomaly detected"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "webhook_response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "position": [1650, 300],
+      "parameters": {
+        "statusCode": 200,
+        "responseBody": "={{ JSON.stringify({ status: 'completed', result: $json }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "NetMon Task Webhook": {
+      "main": [[{"node": "Task Router", "type": "main", "index": 0}]]
+    },
+    "Task Router": {
+      "main": [
+        [{"node": "Network Discovery", "type": "main", "index": 0}],
+        [{"node": "Ping Check", "type": "main", "index": 0}],
+        [{"node": "Port/Vuln Scan", "type": "main", "index": 0}],
+        [{"node": "Continuous Monitor", "type": "main", "index": 0}]
+      ]
+    },
+    "Network Discovery": {
+      "main": [[{"node": "Store in Data Agent", "type": "main", "index": 0}]]
+    },
+    "Ping Check": {
+      "main": [[{"node": "Store in Data Agent", "type": "main", "index": 0}]]
+    },
+    "Port/Vuln Scan": {
+      "main": [[{"node": "Store in Data Agent", "type": "main", "index": 0}]]
+    },
+    "Continuous Monitor": {
+      "main": [[{"node": "Store in Data Agent", "type": "main", "index": 0}]]
+    },
+    "Store in Data Agent": {
+      "main": [[{"node": "AI Analysis", "type": "main", "index": 0}]]
+    },
+    "AI Analysis": {
+      "main": [[{"node": "Check for Alerts", "type": "main", "index": 0}]]
+    },
+    "Check for Alerts": {
+      "main": [
+        [{"node": "Alert Security Agent", "type": "main", "index": 0}],
+        [{"node": "Webhook Response", "type": "main", "index": 0}]
+      ]
+    },
+    "Alert Security Agent": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["network", "monitoring", "automation"]
+}

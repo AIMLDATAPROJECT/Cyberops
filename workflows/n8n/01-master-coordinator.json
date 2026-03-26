@@ -1,0 +1,188 @@
+{
+  "name": "🤖 AI Master Coordinator",
+  "nodes": [
+    {
+      "id": "trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "seconds": 60
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "http_request",
+      "name": "Check Agent Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://orchestrator:8000/agents",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "function",
+      "name": "Analyze & Route Tasks",
+      "type": "n8n-nodes-base.function",
+      "position": [650, 300],
+      "parameters": {
+        "functionCode": "// AI Task Router - Determines what needs to be done\nconst agents = $input.all()[0].json;\n\n// Check for any offline agents\nconst offlineAgents = agents.filter(a => a.status === 'offline');\n\nconst tasks = [];\n\n// Auto-healing: Restart offline agents\nfor (const agent of offlineAgents) {\n  tasks.push({\n    type: 'heal',\n    agent: agent.agent_type,\n    action: 'restart',\n    priority: 'high',\n    reason: `Agent ${agent.agent_type} is offline`\n  });\n}\n\n// Scheduled tasks\nconst hour = new Date().getHours();\n\n// Network discovery every 4 hours\nif (hour % 4 === 0) {\n  tasks.push({\n    type: 'scheduled',\n    agent: 'netmon',\n    action: 'discover',\n    params: { subnet: '192.168.1.0/24' },\n    priority: 'medium'\n  });\n}\n\n// Security scan twice daily\nif (hour === 2 || hour === 14) {\n  tasks.push({\n    type: 'scheduled',\n    agent: 'security',\n    action: 'vuln_scan',\n    params: { target: 'all_systems' },\n    priority: 'high'\n  });\n}\n\n// Data validation every 6 hours\nif (hour % 6 === 0) {\n  tasks.push({\n    type: 'scheduled',\n    agent: 'data',\n    action: 'validate',\n    params: { dataset: 'all' },\n    priority: 'medium'\n  });\n}\n\n// Health checks every 5 minutes\ntasks.push({\n  type: 'health_check',\n  agent: 'devops',\n  action: 'health_check',\n  params: { service: 'all' },\n  priority: 'low'\n});\n\nreturn tasks.map(t => ({ json: t }));"
+      }
+    },
+    {
+      "id": "switch",
+      "name": "Route to Agent",
+      "type": "n8n-nodes-base.switch",
+      "position": [850, 300],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "netmon",
+              "output": 0
+            },
+            {
+              "value": "data",
+              "output": 1
+            },
+            {
+              "value": "devops",
+              "output": 2
+            },
+            {
+              "value": "security",
+              "output": 3
+            },
+            {
+              "value": "ai",
+              "output": 4
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.agent }}",
+        "fallbackOutput": 4
+      }
+    },
+    {
+      "id": "netmon_webhook",
+      "name": "Send to NetMon",
+      "type": "n8n-nodes-base.webhook",
+      "position": [1050, 100],
+      "webhookId": "netmon-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "netmon-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "data_webhook",
+      "name": "Send to Data",
+      "type": "n8n-nodes-base.webhook",
+      "position": [1050, 200],
+      "webhookId": "data-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "data-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "devops_webhook",
+      "name": "Send to DevOps",
+      "type": "n8n-nodes-base.webhook",
+      "position": [1050, 300],
+      "webhookId": "devops-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "devops-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "security_webhook",
+      "name": "Send to Security",
+      "type": "n8n-nodes-base.webhook",
+      "position": [1050, 400],
+      "webhookId": "security-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "security-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "ai_webhook",
+      "name": "Send to AI",
+      "type": "n8n-nodes-base.webhook",
+      "position": [1050, 500],
+      "webhookId": "ai-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ai-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "slack",
+      "name": "Notify on Slack",
+      "type": "n8n-nodes-base.slack",
+      "position": [1250, 300],
+      "parameters": {
+        "channel": "#ai-platform-alerts",
+        "text": "🤖 Task Executed: {{ $json.action }} by {{ $json.agent }}\nPriority: {{ $json.priority }}\nReason: {{ $json.reason || 'Scheduled' }}"
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [[{"node": "Check Agent Health", "type": "main", "index": 0}]]
+    },
+    "Check Agent Health": {
+      "main": [[{"node": "Analyze & Route Tasks", "type": "main", "index": 0}]]
+    },
+    "Analyze & Route Tasks": {
+      "main": [[{"node": "Route to Agent", "type": "main", "index": 0}]]
+    },
+    "Route to Agent": {
+      "main": [
+        [{"node": "Send to NetMon", "type": "main", "index": 0}],
+        [{"node": "Send to Data", "type": "main", "index": 0}],
+        [{"node": "Send to DevOps", "type": "main", "index": 0}],
+        [{"node": "Send to Security", "type": "main", "index": 0}],
+        [{"node": "Send to AI", "type": "main", "index": 0}]
+      ]
+    },
+    "Send to NetMon": {
+      "main": [[{"node": "Notify on Slack", "type": "main", "index": 0}]]
+    },
+    "Send to Data": {
+      "main": [[{"node": "Notify on Slack", "type": "main", "index": 0}]]
+    },
+    "Send to DevOps": {
+      "main": [[{"node": "Notify on Slack", "type": "main", "index": 0}]]
+    },
+    "Send to Security": {
+      "main": [[{"node": "Notify on Slack", "type": "main", "index": 0}]]
+    },
+    "Send to AI": {
+      "main": [[{"node": "Notify on Slack", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": ["automation", "coordinator", "ai"]
+}

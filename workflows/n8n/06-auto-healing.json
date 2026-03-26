@@ -1,0 +1,191 @@
+{
+  "name": "🩹 Auto-Healing System",
+  "nodes": [
+    {
+      "id": "scheduler",
+      "name": "Health Check Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [{
+            "field": "seconds",
+            "seconds": 300
+          }]
+        }
+      }
+    },
+    {
+      "id": "get_agents",
+      "name": "Get All Agents",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [450, 300],
+      "parameters": {
+        "method": "GET",
+        "url": "http://orchestrator:8000/agents",
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "check_offline",
+      "name": "Find Offline Agents",
+      "type": "n8n-nodes-base.function",
+      "position": [650, 300],
+      "parameters": {
+        "functionCode": "const agents = $input.all()[0].json;\nconst offlineAgents = agents.filter(a => a.status !== 'online');\nreturn offlineAgents.map(agent => ({\n  json: {\n    agent_type: agent.agent_type,\n    agent_id: agent.agent_id,\n    last_seen: agent.last_seen,\n    action: 'restart'\n  }\n}));"
+      }
+    },
+    {
+      "id": "if_offline",
+      "name": "Any Offline?",
+      "type": "n8n-nodes-base.if",
+      "position": [850, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.length }}",
+            "operator": {
+              "type": "number",
+              "operation": "gt"
+            },
+            "rightValue": 0
+          }
+        }
+      }
+    },
+    {
+      "id": "restart_agent",
+      "name": "Restart Agent Container",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "restart",
+          "params": {
+            "service": "ai-platform-{{ $json.agent_type }}-agent"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "health_check",
+      "name": "Verify Health After Restart",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/devops",
+        "body": {
+          "action": "health_check",
+          "params": {
+            "service": "{{ $json.agent_type }}"
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "check_still_offline",
+      "name": "Still Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "position": [1450, 250],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "leftValue": "={{ $json.result?.healthy === false }}",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals"
+            },
+            "rightValue": true
+          }
+        }
+      }
+    },
+    {
+      "id": "escalate_alert",
+      "name": "Escalate - Alert Admin",
+      "type": "n8n-nodes-base.slack",
+      "position": [1650, 200],
+      "parameters": {
+        "channel": "#ai-platform-alerts",
+        "text": "🚨 AUTO-HEALING FAILED\n\nAgent: {{ $json.agent_type }}\nStatus: Still offline after restart\nTime: {{ Date.now() }}\n\nManual intervention required!"
+      }
+    },
+    {
+      "id": "log_recovery",
+      "name": "Log Recovery Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1650, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "auto_healing_log",
+            "format": "json",
+            "config": {
+              "data": {
+                "event": "agent_recovered",
+                "agent": "{{ $json.agent_type }}",
+                "timestamp": "{{ Date.now() }}",
+                "action": "auto_restart"
+              },
+              "dataset_name": "auto_healing_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "all_healthy_notify",
+      "name": "Notify All Healthy",
+      "type": "n8n-nodes-base.slack",
+      "position": [1050, 400],
+      "parameters": {
+        "channel": "#ai-platform-status",
+        "text": "✅ All agents healthy! Auto-healing cycle complete."
+      }
+    }
+  ],
+  "connections": {
+    "Health Check Trigger": {
+      "main": [[{"node": "Get All Agents", "type": "main", "index": 0}]]
+    },
+    "Get All Agents": {
+      "main": [[{"node": "Find Offline Agents", "type": "main", "index": 0}]]
+    },
+    "Find Offline Agents": {
+      "main": [[{"node": "Any Offline?", "type": "main", "index": 0}]]
+    },
+    "Any Offline?": {
+      "main": [
+        [{"node": "Restart Agent Container", "type": "main", "index": 0}],
+        [{"node": "Notify All Healthy", "type": "main", "index": 0}]
+      ]
+    },
+    "Restart Agent Container": {
+      "main": [[{"node": "Verify Health After Restart", "type": "main", "index": 0}]]
+    },
+    "Verify Health After Restart": {
+      "main": [[{"node": "Still Unhealthy?", "type": "main", "index": 0}]]
+    },
+    "Still Unhealthy?": {
+      "main": [
+        [{"node": "Escalate - Alert Admin", "type": "main", "index": 0}],
+        [{"node": "Log Recovery Success", "type": "main", "index": 0}]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true,
+    "errorWorkflow": ""
+  },
+  "tags": ["auto-healing", "self-healing", "monitoring"]
+}

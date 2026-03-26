@@ -1,0 +1,245 @@
+{
+  "name": "📊 Data Validation Pipeline",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Data Task Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "position": [250, 300],
+      "webhookId": "data-tasks",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "data-tasks",
+        "responseMode": "responseNode"
+      }
+    },
+    {
+      "id": "switch",
+      "name": "Task Type",
+      "type": "n8n-nodes-base.switch",
+      "position": [450, 300],
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value": "validate",
+              "output": 0
+            },
+            {
+              "value": "query",
+              "output": 1
+            },
+            {
+              "value": "cleanup",
+              "output": 2
+            },
+            {
+              "value": "backup",
+              "output": 3
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.action }}"
+      }
+    },
+    {
+      "id": "validate",
+      "name": "Validate Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 150],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "validate",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "query",
+      "name": "Query Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "query",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "cleanup",
+      "name": "Cleanup Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "cleanup",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "backup",
+      "name": "Backup Dataset",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [650, 450],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "backup",
+          "params": "={{ JSON.stringify($json.params || {}) }}"
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "analyze_issues",
+      "name": "Analyze Data Issues",
+      "type": "n8n-nodes-base.if",
+      "position": [850, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "={{ $json.result?.valid === false || $json.result?.errors?.length > 0 || $json.result?.removed_duplicates > 0 }}",
+            "type": "boolean",
+            "operator": {
+              "type": "boolean",
+              "operation": "equals",
+              "rightValue": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "alert_devops",
+      "name": "Alert DevOps - Data Issue",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 250],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/communicate/message",
+        "body": {
+          "sender": "data",
+          "recipient": "devops",
+          "message_type": "request",
+          "content": {
+            "action": "health_check",
+            "params": {
+              "service": "database",
+              "reason": "Data validation failed"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "ai_summary",
+      "name": "Generate Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1050, 350],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/ai",
+        "body": {
+          "action": "summarize",
+          "params": {
+            "content": "={{ JSON.stringify($json) }}",
+            "max_length": 500
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "store_report",
+      "name": "Store Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [1250, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://orchestrator:8000/execute/data",
+        "body": {
+          "action": "ingest",
+          "params": {
+            "source": "data_pipeline_report",
+            "format": "json",
+            "config": {
+              "data": "={{ $json }}",
+              "dataset_name": "data_pipeline_{{ Date.now() }}"
+            }
+          }
+        },
+        "responseFormat": "json"
+      }
+    },
+    {
+      "id": "response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.webhookResponse",
+      "position": [1450, 300],
+      "parameters": {
+        "statusCode": 200,
+        "responseBody": "={{ JSON.stringify({ status: 'completed', result: $json }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Data Task Webhook": {
+      "main": [[{"node": "Task Type", "type": "main", "index": 0}]]
+    },
+    "Task Type": {
+      "main": [
+        [{"node": "Validate Data", "type": "main", "index": 0}],
+        [{"node": "Query Database", "type": "main", "index": 0}],
+        [{"node": "Cleanup Data", "type": "main", "index": 0}],
+        [{"node": "Backup Dataset", "type": "main", "index": 0}]
+      ]
+    },
+    "Validate Data": {
+      "main": [[{"node": "Analyze Data Issues", "type": "main", "index": 0}]]
+    },
+    "Query Database": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    },
+    "Cleanup Data": {
+      "main": [[{"node": "Analyze Data Issues", "type": "main", "index": 0}]]
+    },
+    "Backup Dataset": {
+      "main": [[{"node": "Generate Summary", "type": "main", "index": 0}]]
+    },
+    "Analyze Data Issues": {
+      "main": [
+        [{"node": "Alert DevOps - Data Issue", "type": "main", "index": 0}],
+        [{"node": "Generate Summary", "type": "main", "index": 0}]
+      ]
+    },
+    "Alert DevOps - Data Issue": {
+      "main": [[{"node": "Store Report", "type": "main", "index": 0}]]
+    },
+    "Generate Summary": {
+      "main": [[{"node": "Store Report", "type": "main", "index": 0}]]
+    },
+    "Store Report": {
+      "main": [[{"node": "Webhook Response", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveExecutionProgress": true
+  },
+  "tags": ["data", "validation", "pipeline"]
+}
